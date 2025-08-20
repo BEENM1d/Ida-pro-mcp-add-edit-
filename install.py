@@ -146,9 +146,6 @@ def generate_mcp_config():
     """生成 MCP 配置"""
     print("\n🔧 生成 MCP 配置...")
     
-    # 获取当前 Python 解释器路径
-    python_exe = sys.executable
-    
     # 获取 server.py 的路径
     current_dir = Path(__file__).parent
     server_path = current_dir / "server.py"
@@ -159,7 +156,7 @@ def generate_mcp_config():
             "github.com/mrexodia/ida-pro-mcp": {
                 "timeout": 60,
                 "type": "stdio",
-                "command": str(python_exe),
+                "command": "python",
                 "args": [str(server_path)]
             }
         }
