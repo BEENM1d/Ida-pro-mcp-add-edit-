@@ -11,23 +11,50 @@ from pathlib import Path
 
 def get_ida_plugins_dir():
     """获取 IDA Pro 插件目录"""
-    system = platform.system().lower()
+    print("📁 请输入你的 IDA Pro 插件目录路径")
+    print("\n💡 常见路径示例：")
+    print("Windows: C:\\Program Files\\IDA Pro 7.7\\plugins")
+    print("Windows (便携版): D:\\IDA_Pro_v7.7\\plugins") 
+    print("Windows (用户目录): %APPDATA%\\Hex-Rays\\IDA Pro\\plugins")
+    print("macOS: /Applications/IDA Pro 7.7/idabin/plugins")
+    print("Linux: /opt/ida-7.7/plugins")
     
-    if system == "windows":
-        # Windows 路径
-        appdata = os.environ.get('APPDATA')
-        if appdata:
-            return Path(appdata) / "Hex-Rays" / "IDA Pro" / "plugins"
-    elif system == "darwin":
-        # macOS 路径
-        home = Path.home()
-        return home / ".idapro" / "plugins"
-    elif system == "linux":
-        # Linux 路径
-        home = Path.home()
-        return home / ".idapro" / "plugins"
-    
-    return None
+    while True:
+        user_path = input("\n🔍 请输入 IDA Pro 插件目录的完整路径: ").strip()
+        
+        if not user_path:
+            print("❌ 路径不能为空，请重新输入")
+            continue
+            
+        # 处理环境变量
+        if "%APPDATA%" in user_path:
+            appdata = os.environ.get('APPDATA')
+            if appdata:
+                user_path = user_path.replace("%APPDATA%", appdata)
+        
+        plugins_dir = Path(user_path)
+        
+        # 检查路径是否存在
+        if not plugins_dir.exists():
+            print(f"❌ 路径不存在: {plugins_dir}")
+            create = input("是否创建此目录? (y/N): ").strip().lower()
+            if create in ['y', 'yes']:
+                try:
+                    plugins_dir.mkdir(parents=True, exist_ok=True)
+                    print(f"✅ 已创建目录: {plugins_dir}")
+                    return plugins_dir
+                except Exception as e:
+                    print(f"❌ 创建目录失败: {e}")
+                    continue
+            else:
+                continue
+        
+        # 检查是否是有效的插件目录
+        if not plugins_dir.is_dir():
+            print(f"❌ 这不是一个有效的目录: {plugins_dir}")
+            continue
+            
+        return plugins_dir
 
 def install_plugin():
     """安装 MCP 插件"""
