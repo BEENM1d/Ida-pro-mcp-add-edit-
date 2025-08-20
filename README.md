@@ -43,16 +43,17 @@
 #### 方法 1: 直接下载安装
 ```bash
 # 克隆仓库
-git clone https://github.com/your-username/ida-pro-mcp-enhanced.git
-cd ida-pro-mcp-enhanced
+git clone https://github.com/BEENM1d/Ida-pro-mcp-add-edit-.git
+cd Ida-pro-mcp-add-edit-
 
 # 运行安装脚本
 python install.py
 ```
 
-#### 方法 2: pip 安装（推荐）
+#### 方法 2: pip 安装（即将支持）
 ```bash
-pip install ida-pro-mcp-enhanced
+# 注意：PyPI 包正在准备中，目前请使用方法 1
+# pip install ida-pro-mcp-enhanced
 ```
 
 ### 手动安装
@@ -186,8 +187,8 @@ logging.basicConfig(level=logging.DEBUG)
 ## 📞 支持
 
 如果你遇到问题或有功能请求，请：
-- 创建一个 [Issue](https://github.com/your-username/ida-pro-mcp-enhanced/issues)
-- 查看 [Wiki](https://github.com/your-username/ida-pro-mcp-enhanced/wiki) 文档
+- 创建一个 [Issue](https://github.com/BEENM1d/Ida-pro-mcp-add-edit-/issues)
+- 查看 [Wiki](https://github.com/BEENM1d/Ida-pro-mcp-add-edit-/wiki) 文档
 - 加入我们的讨论区
 
 ---
