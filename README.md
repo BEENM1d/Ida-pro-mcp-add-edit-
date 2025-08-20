@@ -1,35 +1,33 @@
-# IDA Pro MCP 服务器增强版
+# IDA Pro MCP 服务器 - 编辑功能增强版
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![IDA Pro](https://img.shields.io/badge/IDA%20Pro-7.0+-red.svg)](https://www.hex-rays.com/products/ida/)
 
-一个功能完整的 IDA Pro MCP (Model Context Protocol) 服务器，提供强大的编辑功能和完美的 32/64 位适配。
+基于 [mrexodia/ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp) 的二次开发版本，主要增加了编辑功能支持。
 
-## ✨ 主要特性
+## ✨ 新增特性
 
-### 🔧 核心编辑功能
+本版本在原 [ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp) 基础上增加了以下编辑功能：
+
+### 🔧 编辑功能
 - **字节修补** - 直接修改二进制数据
 - **函数管理** - 创建、删除、重命名函数
-- **注释系统** - 添加详细的分析注释
-- **数据类型设置** - 设置各种数据类型和数组
+- **注释系统** - 添加分析注释
+- **数据类型设置** - 设置数据类型和数组
 
-### 🏗️ 高级类型系统
-- **C 语法类型声明** - 完全支持 C 语法
+### 🏗️ 类型系统
+- **C 语法类型声明** - 支持 C 语法
 - **结构体创建** - 创建自定义结构体
 - **枚举定义** - 创建枚举类型
-- **本地类型管理** - 查看和管理所有定义的类型
 
-### 🔗 变量和引用管理
+### 🔗 变量管理
 - **全局变量操作** - 重命名和类型设置
-- **栈帧变量管理** - 完整的栈变量操作
+- **栈帧变量管理** - 栈变量操作
 - **交叉引用管理** - 添加和删除代码引用
-- **指令操作数类型** - 提升反汇编可读性
 
-### 🎯 32/64 位完美适配
-- **自动检测** - 动态检测 IDA Pro 架构
-- **智能选择** - 自动选择正确的 DLL 文件
-- **无警告运行** - 消除所有架构兼容性警告
+### 🎯 兼容性改进
+- **32/64 位适配** - 修复架构兼容性问题
 
 ## 🚀 快速开始
 
