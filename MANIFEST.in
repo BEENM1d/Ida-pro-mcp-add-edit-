@@ -1,0 +1,8 @@
+include README.md
+include LICENSE
+include ENHANCED_FEATURES.md
+include examples.py
+include mcp-plugin.py
+include server.py
+include install.py
+recursive-include ida_pro_mcp *.py
