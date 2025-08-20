@@ -58,10 +58,10 @@ python install.py
 
 ### 手动安装
 1. 下载 `mcp-plugin.py` 文件
-2. 将文件复制到 IDA Pro 插件目录：
-   - Windows: `%APPDATA%\Hex-Rays\IDA Pro\plugins\`
-   - macOS: `~/.idapro/plugins/`
-   - Linux: `~/.idapro/plugins/`
+2. 将文件复制到你的 IDA Pro 安装目录下的 plugins 文件夹中
+   - 例如：`C:\Program Files\IDA Pro 7.7\plugins\`
+   - 或者：`D:\IDA_Pro_v7.7\plugins\`
+   - 具体路径取决于你的 IDA Pro 安装位置
 
 ## 📖 使用方法
 
@@ -71,15 +71,18 @@ python install.py
 - 菜单栏选择 `Edit -> Plugins -> MCP`
 
 ### 2. 配置 MCP 客户端
-在你的 MCP 客户端配置文件中添加：
+运行 `python install.py` 后，脚本会自动生成正确的配置。
+将生成的配置添加到你的 MCP 客户端配置文件中。
 
+配置示例：
 ```json
 {
   "mcpServers": {
-    "ida-pro-mcp": {
+    "github.com/mrexodia/ida-pro-mcp": {
+      "timeout": 60,
+      "type": "stdio",
       "command": "python",
-      "args": ["-m", "ida_pro_mcp.server"],
-      "env": {}
+      "args": ["C:\\path\\to\\Ida-pro-mcp-add-edit-\\server.py"]
     }
   }
 }
@@ -183,13 +186,6 @@ logging.basicConfig(level=logging.DEBUG)
 - 基于 [mrexodia/ida-pro-mcp](https://github.com/mrexodia/ida-pro-mcp) 项目
 - 感谢 IDA Pro 和 Hex-Rays 团队
 - 感谢 MCP 协议开发团队
-
-## 📞 支持
-
-如果你遇到问题或有功能请求，请：
-- 创建一个 [Issue](https://github.com/BEENM1d/Ida-pro-mcp-add-edit-/issues)
-- 查看 [Wiki](https://github.com/BEENM1d/Ida-pro-mcp-add-edit-/wiki) 文档
-- 加入我们的讨论区
 
 ---
 
