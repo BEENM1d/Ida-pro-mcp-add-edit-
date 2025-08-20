@@ -98,11 +98,14 @@ def install_plugin():
         except Exception as e:
             print(f"⚠️  服务器文件安装失败: {e}")
     
+    # 生成 MCP 配置
+    generate_mcp_config()
+    
     print("\n🎉 安装完成！")
     print("\n📖 使用方法:")
     print("1. 启动 IDA Pro")
     print("2. 按 Ctrl+Alt+M 或选择 Edit -> Plugins -> MCP")
-    print("3. 在你的 MCP 客户端中配置连接")
+    print("3. 将下面的配置添加到你的 MCP 客户端配置文件中")
     print("\n📚 更多信息请查看 README.md")
     
     return True
@@ -138,6 +141,48 @@ def uninstall_plugin():
         print("\n📝 没有找到需要删除的文件")
     
     return True
+
+def generate_mcp_config():
+    """生成 MCP 配置"""
+    print("\n🔧 生成 MCP 配置...")
+    
+    # 获取当前 Python 解释器路径
+    python_exe = sys.executable
+    
+    # 获取 server.py 的路径
+    current_dir = Path(__file__).parent
+    server_path = current_dir / "server.py"
+    
+    # 生成配置
+    config = {
+        "mcpServers": {
+            "github.com/mrexodia/ida-pro-mcp": {
+                "timeout": 60,
+                "type": "stdio",
+                "command": str(python_exe),
+                "args": [str(server_path)]
+            }
+        }
+    }
+    
+    # 保存配置到文件
+    config_file = current_dir / "mcp_config.json"
+    try:
+        import json
+        with open(config_file, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+        print(f"✅ MCP 配置已保存到: {config_file}")
+    except Exception as e:
+        print(f"⚠️  保存配置文件失败: {e}")
+    
+    # 显示配置内容
+    print("\n📋 MCP 客户端配置 (复制以下内容到你的配置文件):")
+    print("=" * 60)
+    import json
+    print(json.dumps(config, indent=2, ensure_ascii=False))
+    print("=" * 60)
+    
+    return config
 
 def main():
     """主函数"""
