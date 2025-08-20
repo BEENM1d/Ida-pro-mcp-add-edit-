@@ -11,7 +11,7 @@ setup(
     description="Enhanced IDA Pro MCP Server with comprehensive editing capabilities and 32/64-bit compatibility",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/your-username/ida-pro-mcp-enhanced",
+    url="https://github.com/BEENM1d/Ida-pro-mcp-add-edit-",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 5 - Production/Stable",
@@ -39,8 +39,8 @@ setup(
     include_package_data=True,
     keywords="ida pro, reverse engineering, mcp, model context protocol, binary analysis",
     project_urls={
-        "Bug Reports": "https://github.com/your-username/ida-pro-mcp-enhanced/issues",
-        "Source": "https://github.com/your-username/ida-pro-mcp-enhanced",
-        "Documentation": "https://github.com/your-username/ida-pro-mcp-enhanced/wiki",
+        "Bug Reports": "https://github.com/BEENM1d/Ida-pro-mcp-add-edit-/issues",
+        "Source": "https://github.com/BEENM1d/Ida-pro-mcp-add-edit-",
+        "Documentation": "https://github.com/BEENM1d/Ida-pro-mcp-add-edit-/wiki",
     },
 )
