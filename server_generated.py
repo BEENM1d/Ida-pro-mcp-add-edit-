@@ -399,7 +399,7 @@ def delete_function(address: Annotated[str, Field(description='Address of functi
     return make_jsonrpc_request('delete_function', address)
 
 @mcp.tool()
-def set_instruction_operand_type(address: Annotated[str, Field(description='Address of the instruction')], operand_index: Annotated[int, Field(description='Index of the operand (0-based)')], operand_type: Annotated[str, Field(description='Type of operand (offset, number, char, etc.)')]) -> str:
+def set_instruction_operand_type(address: Annotated[str, Field(description='Address of the instruction')], operand_index: Annotated[int, Field(description='Index of the operand (0-based)')], operand_type: Annotated[str, Field(description='Type of operand (offset, number, char, decimal, binary, octal, hex)')]) -> str:
     """Set the operand type for an instruction"""
     return make_jsonrpc_request('set_instruction_operand_type', address, operand_index, operand_type)
 

@@ -265,6 +265,7 @@ import ida_dbg
 import ida_name
 import ida_ida
 import ida_frame
+import ida_ua
 
 class IDAError(Exception):
     def __init__(self, message: str):
@@ -1928,14 +1929,33 @@ def patch_bytes(
     try:
         bytes_data = bytes.fromhex(hex_bytes.replace(' ', ''))
     except ValueError:
-        raise IDAError(f"Invalid hex bytes format: {hex_bytes}")
+        raise IDAError(f"无效的十六进制字节格式: {hex_bytes}。请使用格式如 '90 90 90' 或 '909090'")
     
-    # Patch the bytes
+    if len(bytes_data) == 0:
+        raise IDAError(f"没有提供要修补的字节数据")
+    
+    # Check if the address range is valid and accessible
+    for i in range(len(bytes_data)):
+        check_addr = ea + i
+        if not ida_bytes.is_mapped(check_addr):
+            raise IDAError(f"地址 {hex(check_addr)} 未映射到内存中，无法修补")
+        
+        # Check if it's in a read-only segment
+        seg = idaapi.getseg(check_addr)
+        if seg and (seg.perm & idaapi.SEGPERM_WRITE) == 0:
+            raise IDAError(f"地址 {hex(check_addr)} 位于只读段中，无法修补。段名: {idaapi.get_segm_name(seg)}")
+    
+    # Try to patch the bytes
+    failed_addresses = []
     for i, byte_val in enumerate(bytes_data):
-        if not ida_bytes.patch_byte(ea + i, byte_val):
-            raise IDAError(f"Failed to patch byte at address {hex(ea + i)}")
+        patch_addr = ea + i
+        if not ida_bytes.patch_byte(patch_addr, byte_val):
+            failed_addresses.append(hex(patch_addr))
     
-    return f"Successfully patched {len(bytes_data)} bytes at {hex(ea)}"
+    if failed_addresses:
+        raise IDAError(f"修补失败的地址: {', '.join(failed_addresses)}。可能原因：1) 地址受保护 2) IDA数据库只读 3) 地址无效")
+    
+    return f"成功在 {hex(ea)} 修补了 {len(bytes_data)} 个字节: {hex_bytes}"
 
 @jsonrpc
 @idawrite
@@ -1945,10 +1965,75 @@ def create_function(
     """Create a new function at the specified address"""
     ea = parse_address(address)
     
+    # Check if the address is valid and mapped
+    if not ida_bytes.is_mapped(ea):
+        raise IDAError(f"地址 {hex(ea)} 未映射到内存中，无法创建函数")
+    
+    # Check if there's already a function at this address
+    existing_func = idaapi.get_func(ea)
+    if existing_func:
+        func_name = ida_funcs.get_func_name(existing_func.start_ea)
+        raise IDAError(f"地址 {hex(ea)} 已存在函数: {func_name} (范围: {hex(existing_func.start_ea)}-{hex(existing_func.end_ea)})")
+    
+    # Check if the address contains code
+    flags = ida_bytes.get_flags(ea)
+    if not ida_bytes.is_code(flags):
+        # Try to create code first
+        print(f"[MCP] 尝试在 {hex(ea)} 创建指令...")
+        if ida_ua.create_insn(ea):
+            print(f"[MCP] 成功在 {hex(ea)} 创建指令")
+        else:
+            # Check what type of data is at this address
+            if ida_bytes.is_data(flags):
+                data_type = "数据"
+            elif ida_bytes.is_unknown(flags):
+                data_type = "未定义"
+            else:
+                data_type = "未知类型"
+            
+            raise IDAError(f"无法在 {hex(ea)} 创建指令，该地址包含 {data_type}。请先确保该地址包含有效的机器码指令")
+    
+    # Check if this address is part of another function
+    containing_func = idaapi.get_func(ea)
+    if containing_func and containing_func.start_ea != ea:
+        func_name = ida_funcs.get_func_name(containing_func.start_ea)
+        raise IDAError(f"地址 {hex(ea)} 位于现有函数 {func_name} 内部 (函数范围: {hex(containing_func.start_ea)}-{hex(containing_func.end_ea)})")
+    
+    # Try to create the function
+    print(f"[MCP] 尝试在 {hex(ea)} 创建函数...")
     if ida_funcs.add_func(ea):
-        return f"Successfully created function at {hex(ea)}"
+        # Get the created function info
+        new_func = idaapi.get_func(ea)
+        if new_func:
+            return f"成功在 {hex(ea)} 创建函数 (范围: {hex(new_func.start_ea)}-{hex(new_func.end_ea)})"
+        else:
+            return f"成功在 {hex(ea)} 创建函数"
     else:
-        raise IDAError(f"Failed to create function at {hex(ea)}")
+        # Provide detailed error analysis
+        error_reasons = []
+        
+        if not ida_bytes.is_code(ida_bytes.get_flags(ea)):
+            error_reasons.append("地址不包含代码")
+        
+        # Check if there are any instructions at this address
+        insn = idaapi.insn_t()
+        if not idaapi.decode_insn(insn, ea):
+            error_reasons.append("无法解码指令")
+        
+        # Check segment permissions
+        seg = idaapi.getseg(ea)
+        if seg:
+            seg_name = idaapi.get_segm_name(seg)
+            if not (seg.perm & idaapi.SEGPERM_EXEC):
+                error_reasons.append(f"段 {seg_name} 不可执行")
+        else:
+            error_reasons.append("地址不在任何段中")
+        
+        if error_reasons:
+            reason_str = "、".join(error_reasons)
+            raise IDAError(f"在 {hex(ea)} 创建函数失败。原因: {reason_str}")
+        else:
+            raise IDAError(f"在 {hex(ea)} 创建函数失败，原因未知。可能需要先分析代码或该地址不适合创建函数")
 
 @jsonrpc
 @idawrite
@@ -1971,29 +2056,70 @@ def delete_function(
 def set_instruction_operand_type(
     address: Annotated[str, "Address of the instruction"],
     operand_index: Annotated[int, "Index of the operand (0-based)"],
-    operand_type: Annotated[str, "Type of operand (offset, number, char, etc.)"],
+    operand_type: Annotated[str, "Type of operand (offset, number, char, decimal, binary, octal, hex)"],
 ) -> str:
     """Set the operand type for an instruction"""
     ea = parse_address(address)
     
-    # Map operand type strings to IDA constants
-    type_map = {
-        "offset": ida_bytes.off_flag(),
-        "number": ida_bytes.num_flag(),
-        "char": ida_bytes.char_flag(),
-        "segment": ida_bytes.seg_flag(),
-        "enum": ida_bytes.enum_flag(),
-        "struct": ida_bytes.stroff_flag(),
-    }
+    # Check if the address is valid and mapped
+    if not ida_bytes.is_mapped(ea):
+        raise IDAError(f"地址 {hex(ea)} 未映射到内存中")
     
-    if operand_type not in type_map:
-        raise IDAError(f"Unknown operand type: {operand_type}")
+    # Ensure this is an instruction
+    flags = ida_bytes.get_flags(ea)
+    if not ida_bytes.is_code(flags):
+        if ida_bytes.is_data(flags):
+            raise IDAError(f"地址 {hex(ea)} 包含数据而非指令，无法设置操作数类型")
+        else:
+            raise IDAError(f"地址 {hex(ea)} 不包含指令，请先确保该地址包含有效的机器码")
     
-    flag = type_map[operand_type]
-    if ida_bytes.set_op_type(ea, flag, operand_index):
-        return f"Successfully set operand {operand_index} type to {operand_type} at {hex(ea)}"
+    # Decode the instruction to check operand count
+    insn = idaapi.insn_t()
+    if not idaapi.decode_insn(insn, ea):
+        raise IDAError(f"无法解码地址 {hex(ea)} 的指令")
+    
+    # Check if operand index is valid
+    if operand_index >= insn.size or operand_index < 0:
+        actual_operands = insn.size
+        raise IDAError(f"操作数索引 {operand_index} 无效。指令在 {hex(ea)} 只有 {actual_operands} 个操作数 (索引范围: 0-{actual_operands-1})")
+    
+    # Get instruction mnemonic for better error reporting
+    mnem = idaapi.print_insn_mnem(ea)
+    operand_value = idaapi.print_operand(ea, operand_index)
+    
+    print(f"[MCP] 尝试设置指令 {mnem} 在 {hex(ea)} 的操作数 {operand_index} ({operand_value}) 类型为 {operand_type}")
+    
+    # Map operand type strings to IDA functions
+    success = False
+    if operand_type == "offset":
+        success = ida_bytes.op_offset(ea, operand_index, ida_bytes.REF_OFF32)
+    elif operand_type == "number":
+        success = ida_bytes.op_num(ea, operand_index)
+    elif operand_type == "char":
+        success = ida_bytes.op_chr(ea, operand_index)
+    elif operand_type == "decimal":
+        success = ida_bytes.op_dec(ea, operand_index)
+    elif operand_type == "binary":
+        success = ida_bytes.op_bin(ea, operand_index)
+    elif operand_type == "octal":
+        success = ida_bytes.op_oct(ea, operand_index)
+    elif operand_type == "hex":
+        success = ida_bytes.op_hex(ea, operand_index)
     else:
-        raise IDAError(f"Failed to set operand type at {hex(ea)}")
+        valid_types = "offset, number, char, decimal, binary, octal, hex"
+        raise IDAError(f"未知操作数类型: {operand_type}。有效类型: {valid_types}")
+    
+    if success:
+        return f"成功设置指令 {mnem} 在 {hex(ea)} 的操作数 {operand_index} ({operand_value}) 类型为 {operand_type}"
+    else:
+        # Try to provide more specific error information
+        operand_type_desc = insn.ops[operand_index].type
+        if operand_type_desc == idaapi.o_reg:
+            raise IDAError(f"无法设置操作数类型：操作数 {operand_index} 是寄存器 ({operand_value})，不支持类型转换")
+        elif operand_type_desc == idaapi.o_phrase:
+            raise IDAError(f"无法设置操作数类型：操作数 {operand_index} 是内存引用 ({operand_value})，可能不支持 {operand_type} 类型")
+        else:
+            raise IDAError(f"无法设置操作数 {operand_index} 类型为 {operand_type}。可能原因：1) 操作数类型不兼容 2) 操作数值不适合该显示格式")
 
 @jsonrpc
 @idawrite
@@ -2079,14 +2205,77 @@ def set_data_type(
     """Set the data type at a specific address"""
     ea = parse_address(address)
     
-    # Get type info
-    tif = get_type_by_name(data_type)
+    # Check if the address is valid and mapped
+    if not ida_bytes.is_mapped(ea):
+        raise IDAError(f"地址 {hex(ea)} 未映射到内存中，无法设置数据类型")
     
-    # Apply the type
-    if ida_typeinf.apply_tinfo(ea, tif, ida_typeinf.TINFO_DEFINITE):
-        return f"Successfully set data type {data_type} at {hex(ea)}"
-    else:
-        raise IDAError(f"Failed to set data type {data_type} at {hex(ea)}")
+    # Check if the range is valid
+    for i in range(size):
+        if not ida_bytes.is_mapped(ea + i):
+            raise IDAError(f"地址范围 {hex(ea)}-{hex(ea + size - 1)} 中的地址 {hex(ea + i)} 未映射")
+    
+    # Get current item info
+    current_flags = ida_bytes.get_flags(ea)
+    current_size = ida_bytes.get_item_size(ea)
+    
+    if ida_bytes.is_code(current_flags):
+        print(f"[MCP] 警告: 地址 {hex(ea)} 当前包含代码，将转换为数据")
+    elif ida_bytes.is_data(current_flags):
+        print(f"[MCP] 地址 {hex(ea)} 当前包含数据 (大小: {current_size} 字节)，将重新定义")
+    
+    # First, undefine any existing data/code at this location
+    if not ida_bytes.del_items(ea, ida_bytes.DELIT_SIMPLE, size):
+        print(f"[MCP] 警告: 无法完全清除地址 {hex(ea)} 的现有定义")
+    
+    # Map basic data types to IDA flags
+    type_flag_map = {
+        "BYTE": ida_bytes.byte_flag(),
+        "WORD": ida_bytes.word_flag(), 
+        "DWORD": ida_bytes.dword_flag(),
+        "QWORD": ida_bytes.qword_flag(),
+        "byte": ida_bytes.byte_flag(),
+        "word": ida_bytes.word_flag(),
+        "dword": ida_bytes.dword_flag(),
+        "qword": ida_bytes.qword_flag(),
+    }
+    
+    # Try basic IDA types first
+    if data_type in type_flag_map:
+        print(f"[MCP] 尝试设置基本数据类型 {data_type} 在 {hex(ea)}")
+        if ida_bytes.create_data(ea, type_flag_map[data_type], size, ida_idaapi.BADADDR):
+            return f"成功在 {hex(ea)} 设置数据类型为 {data_type} (大小: {size} 字节)"
+        else:
+            # Try to get more specific error info
+            seg = idaapi.getseg(ea)
+            if seg:
+                seg_name = idaapi.get_segm_name(seg)
+                if not (seg.perm & idaapi.SEGPERM_WRITE):
+                    raise IDAError(f"无法在 {hex(ea)} 创建 {data_type} 数据：段 {seg_name} 为只读")
+            raise IDAError(f"无法在 {hex(ea)} 创建 {data_type} 数据。可能原因：1) 地址冲突 2) 大小不匹配 3) 段权限问题")
+    
+    # For complex types, try to get type info and apply it
+    print(f"[MCP] 尝试设置复杂数据类型 {data_type} 在 {hex(ea)}")
+    try:
+        tif = get_type_by_name(data_type)
+        type_size = tif.get_size()
+        if type_size != size and type_size > 0:
+            print(f"[MCP] 警告: 类型 {data_type} 的实际大小是 {type_size} 字节，但指定大小为 {size} 字节")
+        
+        # First create basic data
+        if ida_bytes.create_data(ea, ida_bytes.get_default_dtype(), size, ida_idaapi.BADADDR):
+            # Then apply the type
+            if ida_typeinf.apply_tinfo(ea, tif, ida_typeinf.TINFO_DEFINITE):
+                return f"成功在 {hex(ea)} 设置数据类型为 {data_type} (大小: {size} 字节)"
+            else:
+                raise IDAError(f"无法在 {hex(ea)} 应用类型 {data_type}。类型信息可能不兼容")
+        else:
+            raise IDAError(f"无法在 {hex(ea)} 创建基础数据以应用类型 {data_type}")
+    except IDAError as e:
+        if "Unable to retrieve" in str(e):
+            available_types = "BYTE, WORD, DWORD, QWORD"
+            raise IDAError(f"未知数据类型: {data_type}。可用的基本类型: {available_types}")
+        else:
+            raise e
 
 @jsonrpc
 @idawrite
