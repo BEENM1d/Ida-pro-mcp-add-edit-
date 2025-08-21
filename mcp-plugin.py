@@ -1939,23 +1939,203 @@ def patch_bytes(
         check_addr = ea + i
         if not ida_bytes.is_mapped(check_addr):
             raise IDAError(f"地址 {hex(check_addr)} 未映射到内存中，无法修补")
-        
-        # Check if it's in a read-only segment
-        seg = idaapi.getseg(check_addr)
-        if seg and (seg.perm & idaapi.SEGPERM_WRITE) == 0:
-            raise IDAError(f"地址 {hex(check_addr)} 位于只读段中，无法修补。段名: {idaapi.get_segm_name(seg)}")
     
-    # Try to patch the bytes
+    # 强制修补模式 - 移除只读段检查，尝试多种方法修补
+    print(f"[MCP] 强制修补模式：尝试在 {hex(ea)} 修补 {len(bytes_data)} 个字节")
+    
+    # 方法1: 直接使用 patch_byte (最常用)
     failed_addresses = []
+    success_count = 0
+    
     for i, byte_val in enumerate(bytes_data):
         patch_addr = ea + i
-        if not ida_bytes.patch_byte(patch_addr, byte_val):
-            failed_addresses.append(hex(patch_addr))
+        
+        # 获取段信息用于调试
+        seg = idaapi.getseg(patch_addr)
+        seg_name = idaapi.get_segm_name(seg) if seg else "未知段"
+        is_readonly = seg and (seg.perm & idaapi.SEGPERM_WRITE) == 0
+        
+        print(f"[MCP] 尝试修补 {hex(patch_addr)} (段: {seg_name}, 只读: {is_readonly})")
+        
+        # 尝试直接修补
+        if ida_bytes.patch_byte(patch_addr, byte_val):
+            success_count += 1
+            print(f"[MCP] 成功修补 {hex(patch_addr)} = 0x{byte_val:02x}")
+            continue
+        
+        # 方法2: 尝试使用 put_byte (更底层)
+        try:
+            ida_bytes.put_byte(patch_addr, byte_val)
+            success_count += 1
+            print(f"[MCP] 使用 put_byte 成功修补 {hex(patch_addr)} = 0x{byte_val:02x}")
+            continue
+        except:
+            pass
+        
+        # 方法3: 尝试修改段权限后再修补
+        if seg and is_readonly:
+            try:
+                print(f"[MCP] 尝试临时修改段 {seg_name} 权限")
+                # 保存原始权限
+                original_perm = seg.perm
+                # 临时添加写权限
+                seg.perm |= idaapi.SEGPERM_WRITE
+                
+                # 再次尝试修补
+                if ida_bytes.patch_byte(patch_addr, byte_val):
+                    success_count += 1
+                    print(f"[MCP] 修改权限后成功修补 {hex(patch_addr)} = 0x{byte_val:02x}")
+                    # 恢复原始权限
+                    seg.perm = original_perm
+                    continue
+                else:
+                    # 恢复原始权限
+                    seg.perm = original_perm
+            except:
+                # 确保恢复权限
+                if seg:
+                    seg.perm = original_perm
+        
+        # 方法4: 尝试使用 visit_patched_bytes (如果可用)
+        try:
+            if hasattr(ida_bytes, 'visit_patched_bytes'):
+                # 这是一个更底层的方法
+                ida_bytes.patch_many_bytes(patch_addr, bytes([byte_val]))
+                success_count += 1
+                print(f"[MCP] 使用 patch_many_bytes 成功修补 {hex(patch_addr)} = 0x{byte_val:02x}")
+                continue
+        except:
+            pass
+        
+        # 所有方法都失败了
+        failed_addresses.append(hex(patch_addr))
+        print(f"[MCP] 所有方法都无法修补 {hex(patch_addr)}")
     
-    if failed_addresses:
-        raise IDAError(f"修补失败的地址: {', '.join(failed_addresses)}。可能原因：1) 地址受保护 2) IDA数据库只读 3) 地址无效")
+    # 报告结果
+    if success_count == len(bytes_data):
+        return f"成功在 {hex(ea)} 修补了 {len(bytes_data)} 个字节: {hex_bytes} (强制模式)"
+    elif success_count > 0:
+        return f"部分成功：在 {hex(ea)} 修补了 {success_count}/{len(bytes_data)} 个字节。失败地址: {', '.join(failed_addresses)}"
+    else:
+        # 提供更详细的错误信息
+        error_details = []
+        for addr_str in failed_addresses:
+            addr = int(addr_str, 16)
+            seg = idaapi.getseg(addr)
+            if seg:
+                seg_name = idaapi.get_segm_name(seg)
+                is_readonly = (seg.perm & idaapi.SEGPERM_WRITE) == 0
+                error_details.append(f"{addr_str} (段: {seg_name}, 只读: {is_readonly})")
+            else:
+                error_details.append(f"{addr_str} (无段信息)")
+        
+        raise IDAError(f"强制修补失败。所有地址都无法修补: {'; '.join(error_details)}。可能原因：1) IDA数据库文件只读 2) 系统级保护 3) 内存映射问题")
+
+@jsonrpc
+@idawrite
+def force_patch_bytes(
+    address: Annotated[str, "Address to force patch bytes at"],
+    hex_bytes: Annotated[str, "Hexadecimal bytes to patch (e.g., '90 90 90' for three NOPs)"],
+) -> str:
+    """Force patch bytes at a specific address, bypassing all protection checks"""
+    ea = parse_address(address)
     
-    return f"成功在 {hex(ea)} 修补了 {len(bytes_data)} 个字节: {hex_bytes}"
+    # Parse hex bytes
+    try:
+        bytes_data = bytes.fromhex(hex_bytes.replace(' ', ''))
+    except ValueError:
+        raise IDAError(f"无效的十六进制字节格式: {hex_bytes}。请使用格式如 '90 90 90' 或 '909090'")
+    
+    if len(bytes_data) == 0:
+        raise IDAError(f"没有提供要修补的字节数据")
+    
+    print(f"[MCP] 超级强制修补模式：绕过所有保护检查")
+    
+    success_count = 0
+    failed_addresses = []
+    modified_segments = []
+    
+    for i, byte_val in enumerate(bytes_data):
+        patch_addr = ea + i
+        
+        # 获取段信息
+        seg = idaapi.getseg(patch_addr)
+        seg_name = idaapi.get_segm_name(seg) if seg else "未知段"
+        
+        print(f"[MCP] 强制修补 {hex(patch_addr)} = 0x{byte_val:02x} (段: {seg_name})")
+        
+        # 保存原始段权限
+        original_perm = None
+        if seg:
+            original_perm = seg.perm
+            # 强制设置为可读写可执行
+            seg.perm = idaapi.SEGPERM_READ | idaapi.SEGPERM_WRITE | idaapi.SEGPERM_EXEC
+            if seg_name not in modified_segments:
+                modified_segments.append(seg_name)
+                print(f"[MCP] 临时修改段 {seg_name} 权限为 RWX")
+        
+        try:
+            # 尝试多种修补方法
+            patched = False
+            
+            # 方法1: patch_byte
+            if ida_bytes.patch_byte(patch_addr, byte_val):
+                patched = True
+            
+            # 方法2: put_byte
+            elif hasattr(ida_bytes, 'put_byte'):
+                try:
+                    ida_bytes.put_byte(patch_addr, byte_val)
+                    patched = True
+                except:
+                    pass
+            
+            # 方法3: 直接内存写入 (如果可能)
+            if not patched:
+                try:
+                    # 尝试使用更底层的方法
+                    if hasattr(idaapi, 'patch_many_bytes'):
+                        idaapi.patch_many_bytes(patch_addr, bytes([byte_val]))
+                        patched = True
+                except:
+                    pass
+            
+            # 方法4: 通过字节数组修补
+            if not patched:
+                try:
+                    # 创建一个字节数组并尝试写入
+                    byte_array = ida_bytes.get_bytes(patch_addr, 1)
+                    if byte_array:
+                        # 修改字节
+                        new_bytes = bytes([byte_val])
+                        if ida_bytes.patch_many_bytes(patch_addr, new_bytes):
+                            patched = True
+                except:
+                    pass
+            
+            if patched:
+                success_count += 1
+                print(f"[MCP] 成功强制修补 {hex(patch_addr)}")
+            else:
+                failed_addresses.append(hex(patch_addr))
+                print(f"[MCP] 强制修补失败 {hex(patch_addr)}")
+        
+        finally:
+            # 恢复原始段权限
+            if seg and original_perm is not None:
+                seg.perm = original_perm
+    
+    # 报告修改的段
+    if modified_segments:
+        print(f"[MCP] 已恢复以下段的原始权限: {', '.join(modified_segments)}")
+    
+    # 报告结果
+    if success_count == len(bytes_data):
+        return f"强制修补成功：在 {hex(ea)} 修补了 {len(bytes_data)} 个字节: {hex_bytes}"
+    elif success_count > 0:
+        return f"部分强制修补成功：在 {hex(ea)} 修补了 {success_count}/{len(bytes_data)} 个字节。失败地址: {', '.join(failed_addresses)}"
+    else:
+        raise IDAError(f"强制修补完全失败。所有地址都无法修补: {', '.join(failed_addresses)}。这可能表示IDA数据库文件本身是只读的或存在系统级保护")
 
 @jsonrpc
 @idawrite
